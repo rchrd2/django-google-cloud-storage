@@ -1,129 +1,75 @@
-"""
-Google Cloud Storage file backend for Django
-"""
+import os.path
 
-import os
-import mimetypes
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.core.files.storage import Storage
-from google.appengine.api.blobstore import create_gs_key
-import cloudstorage as gcs
+from google.cloud import storage
+from google.cloud.storage import Blob
 
-__author__ = "ckopanos@redmob.gr, me@rchrd.net"
-__license__ = "GNU GENERAL PUBLIC LICENSE"
+__author__ = 'ckopanos@redmob.gr'
 
 
 class GoogleCloudStorage(Storage):
 
-    def __init__(self, location=None, base_url=None):
-        if location is None:
-            location = settings.GOOGLE_CLOUD_STORAGE_BUCKET
-        self.location = location
-        if base_url is None:
-            base_url = settings.GOOGLE_CLOUD_STORAGE_URL
-        self.base_url = base_url
+    def __init__(self, project=None, bucket=None):
+        if project is None:
+            project = settings.GOOGLE_CLOUD_STORAGE_PROJECT
+        if bucket is None:
+            bucket = settings.GOOGLE_CLOUD_STORAGE_BUCKET
+        self.client = storage.Client(project=project)
+        self.bucket = self.client.get_bucket(bucket)
 
-    def _open(self, name, mode='r'):
-        filename = self.location + "/" + name
-
-        # rb is not supported
-        if mode == 'rb':
-            mode = 'r'
-
-        if mode == 'w':
-            type, encoding = mimetypes.guess_type(name)
-            cache_control = settings.GOOGLE_CLOUD_STORAGE_DEFAULT_CACHE_CONTROL
-            gcs_file = gcs.open(filename, mode=mode, content_type=type,
-                                options={'x-goog-acl': 'public-read',
-                                         'cache-control': cache_control})
-        else:
-            gcs_file = gcs.open(filename, mode=mode)
-
-        return gcs_file
+    def _open(self, name, mode='rb'):
+        blob = Blob(name, self.bucket)
+        file = ContentFile(blob.download_as_string(client=self.client))
+        return file
 
     def _save(self, name, content):
-        filename = self.location + "/" + name
-        filename = os.path.normpath(filename)
-        type, encoding = mimetypes.guess_type(name)
-        cache_control = settings.GOOGLE_CLOUD_STORAGE_DEFAULT_CACHE_CONTROL
-
-        # Files are stored with public-read permissions.
-        # Check out the google acl options if you need to alter this.
-        gss_file = gcs.open(filename, mode='w', content_type=type,
-                            options={'x-goog-acl': 'public-read',
-                                     'cache-control': cache_control})
-        try:
-            content.open()
-        except:
-            pass
-        gss_file.write(content.read())
-        try:
-            content.close()
-        except:
-            pass
-        gss_file.close()
-        return name
+        name = os.path.basename(name)
+        new_name = name
+        count = 0
+        while True:
+            blob = Blob(new_name, self.bucket, chunk_size=1024*256)
+            if not blob.exists():
+                break
+            count += 1
+            new_name = name + '.%d' % count
+        blob.upload_from_file(content)
+        blob.make_public()
+        return new_name
 
     def delete(self, name):
-        filename = self.location+"/"+name
-        try:
-            gcs.delete(filename)
-        except gcs.NotFoundError:
-            pass
+        blob = Blob(name, self.bucket)
+        blob.delete()
 
     def exists(self, name):
-        try:
-            self.statFile(name)
-            return True
-        except gcs.NotFoundError:
-            return False
+        blob = Blob(name, self.bucket)
+        return blob.exists()
 
     def listdir(self, path=None):
         directories, files = [], []
-        bucketContents = gcs.listbucket(self.location, prefix=path)
-        for entry in bucketContents:
-            filePath = entry.filename
-            head, tail = os.path.split(filePath)
-            subPath = os.path.join(self.location, path)
-            head = head.replace(subPath, '', 1)
-            if head == "":
-                head = None
-            if not head and tail:
-                files.append(tail)
-            if head:
-                if not head.startswith("/"):
-                    head = "/" + head
-                dir = head.split("/")[1]
-                if not dir in directories:
-                    directories.append(dir)
+        for b1 in self.bucket.list_blobs():
+            files.append(b1.name)
         return directories, files
 
     def size(self, name):
-        stats = self.statFile(name)
-        return stats.st_size
+        blob = Blob(name, self.bucket)
+        return blob.size()
 
     def accessed_time(self, name):
         raise NotImplementedError
 
     def created_time(self, name):
-        stats = self.statFile(name)
-        return stats.st_ctime
+        blob = Blob(name, self.bucket)
+        return blob.timeCreated
 
     def modified_time(self, name):
-        return self.created_time(name)
+        blob = Blob(name, self.bucket)
+        return blob.updated
 
     def url(self, name):
-        server_software = os.getenv("SERVER_SOFTWARE", "")
-        if not server_software.startswith("Google App Engine"):
-            # we need this in order to display images, links to files, etc
-            # from the local appengine server
-            filename = "/gs" + self.location + "/" + name
-            key = create_gs_key(filename)
-            local_base_url = getattr(settings, "GOOGLE_CLOUD_STORAGE_DEV_URL",
-                                     "http://localhost:8001/blobstore/blob/")
-            return local_base_url + key + "?display=inline"
-        return self.base_url + "/" + name
+        blob = Blob(name, self.bucket)
+        return blob.public_url
 
     def statFile(self, name):
-        filename = self.location + "/" + name
-        return gcs.stat(filename)
+        raise NotImplementedError
