@@ -20,7 +20,7 @@ class GoogleCloudStorage(Storage):
             location = settings.GOOGLE_CLOUD_STORAGE_BUCKET
         self.location = location
         if base_url is None:
-            base_url = settings.GOOGLE_CLOUD_STORAGE_URL
+            base_url = '//storage.googleapis.com/{0}/'.format(location)
         self.base_url = base_url
 
     def _open(self, name, mode='r'):
@@ -115,14 +115,8 @@ class GoogleCloudStorage(Storage):
     def url(self, name):
         server_software = os.getenv("SERVER_SOFTWARE", "")
         if not server_software.startswith("Google App Engine"):
-            # we need this in order to display images, links to files, etc
-            # from the local appengine server
-            filename = "/gs" + self.location + "/" + name
-            key = create_gs_key(filename)
-            local_base_url = getattr(settings, "GOOGLE_CLOUD_STORAGE_DEV_URL",
-                                     "http://localhost:8001/blobstore/blob/")
-            return local_base_url + key + "?display=inline"
-        return self.base_url + "/" + name
+            pass
+        return self.base_url + name
 
     def statFile(self, name):
         filename = self.location + "/" + name
