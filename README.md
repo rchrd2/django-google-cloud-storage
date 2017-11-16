@@ -26,7 +26,7 @@ Installation
 -------------
 
 ```
-pip install django-google-cloud-storage
+pip install git+https://github.com/IntimateMerger/django-google-cloud-storage.git@master
 ```
 
 Or Just copy the google folder in your project directory
@@ -37,16 +37,8 @@ Configuration
 On your django settings.py file you need to add the following settings
 
     GOOGLE_CLOUD_STORAGE_BUCKET = '/your_bucket_name' # the name of the bucket you have created from the google cloud storage console
-    GOOGLE_CLOUD_STORAGE_URL = 'http://storage.googleapis.com/bucket' #whatever the ulr for accessing your cloud storgage bucket
     GOOGLE_CLOUD_STORAGE_DEFAULT_CACHE_CONTROL = 'public, max-age: 7200' # default cache control headers for your files
 
 And finally declare the file storage backend you will use on your settings.py file
 
     DEFAULT_FILE_STORAGE = 'django_google_cloud_storage.GoogleCloudStorage'
-
-
-Credits
--------
-
-Christos Kopanos (@ckopanos) - source code  
-Richard Caceres (@rchrd2) - packaging into python module  
